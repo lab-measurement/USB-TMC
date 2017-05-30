@@ -1,6 +1,6 @@
 use strict;
 use warnings;
-package LibUSB::TMC;
+package LibUSB::USBTMC;
 
 use LibUSB;
 use Moose;

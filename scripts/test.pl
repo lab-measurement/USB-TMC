@@ -3,9 +3,9 @@ use 5.020;
 use warnings;
 use strict;
 use lib 'lib';
-use LibUSB::TMC;
+use LibUSB::USBTMC;
 
-my $driver = LibUSB::TMC->new(vid => 0x0957, pid => 0x0607);
+my $driver = LibUSB::USBTMC->new(vid => 0x0957, pid => 0x0607);
 
 $driver->clear_halt_in();
 $driver->clear_halt_out();

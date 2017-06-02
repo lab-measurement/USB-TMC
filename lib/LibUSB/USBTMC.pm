@@ -6,6 +6,21 @@ use LibUSB;
 use Moose;
 use MooseX::Params::Validate 'validated_list';
 
+
+use constant {
+    MsgID_DEV_DEP_MSG_OUT => 1,
+    MsgID_REQUEST_DEV_DEP_MSG_IN => 2,
+    MsgID_DEV_DEP_MSG_IN => 2,
+    MsgID_VENDOR_SPECIFIC_OUT => 126,
+    MsgID_REQUEST_VENDOR_SPECIFIC_IN => 127,
+    MsgID_VENDOR_SPECIFIC_IN => 127,
+
+    MESSAGE_FINALIZES_TRANSFER => "\x{01}",
+    MESSAGE_DOES_NOT_FINALIZE_TRANSFER => "\x{00}",
+};
+
+my $null_byte = "\x{00}";
+
 has 'vid' => (
     is => 'ro',
     isa => 'Int',
@@ -67,11 +82,17 @@ sub BUILD {
     my $self = shift;
     my $ctx = LibUSB->init();
     $ctx->set_debug(LIBUSB_LOG_LEVEL_WARNING);
-
+    
     my $handle = $ctx->open_device_with_vid_pid($self->vid(), $self->pid());
     my $device = $handle->get_device();
+    
+
+    eval {
+        $handle->set_auto_detach_kernel_driver(1);
+    };
 
     # FIXME: is interface always 0. Search for USBTMC interface?
+
     $handle->claim_interface(0);
     
     $self->_ctx($ctx);
@@ -96,11 +117,11 @@ sub dev_dep_msg_out {
         timeout => {isa => 'Int', default => 5000},
         );
     
-    my $header = $self->_dev_dep_msg_out_header($data);
+    my $header = $self->_dev_dep_msg_out_header(length => length $data);
     my $endpoint = $self->bulk_out_endpoint();
 
     # Ensure that total number of bytes is multiple of 4.
-    $data .= "\x{00}" x ((length $data) % 4); 
+    $data .= $null_byte x ((length $data) % 4); 
     $self->handle()->bulk_transfer_write($endpoint, $header . $data, $timeout);
 }
 
@@ -112,47 +133,44 @@ sub request_dev_dep_msg_in {
         timeout => {isa => 'Int', default => 5000},
         );
     
-    my $header = $self->_dev_dep_msg_in_header($length);
+    my $header = $self->_dev_dep_msg_in_header(length => $length);
     my $endpoint = $self->bulk_out_endpoint();
 
-    # Fixme: ensure that total transfer length is multiple of 4!!!
+    # Length of $header is already multiple of 4.
     $self->handle()->bulk_transfer_write($endpoint, $header, $timeout);
 }
 
-
-
 sub _dev_dep_msg_out_header {
     my $self = shift;
-    my $data = shift;
+    my ($length) = validated_list(\@_, length => {isa => 'Int'});
     
-    my $header = $self->_bulk_out_header(1);
-    $header .= pack('V', length $data);
-    $header .= "\x{01}";
-    $header .= "\x{00}" x 3;
+    my $header = $self->_bulk_out_header(MsgID => MsgID_DEV_DEP_MSG_OUT);
+    $header .= pack('V', $length);
+    $header .= MESSAGE_FINALIZES_TRANSFER;
+    $header .= $null_byte x 3;  # Reserved bytes.
     return $header;
 }
 
 sub _request_dev_dep_msg_in_header {
     my $self = shift;
-    my $length = shift;
-    my $header = $self->_bulk_out_header(2);
+    my ($length) = validated_list(\@_, length => {isa => 'Int'});
+    my $header = $self->_bulk_out_header(MsgID => MsgID_REQUEST_DEV_DEP_MSG_IN);
     $header .= pack('V', $length);
     $header .= pack('C', 2); # Fixme: make argument
     $header .= '\n';         # Term char
-    $header .= "\x{00}" x 2; # Reserved. Must be 0x00.
+    $header .= $null_byte x 2; # Reserved. Must be 0x00.
     return $header;
 }
 
 
 sub _bulk_out_header {
     my $self = shift;
-    my $MsgID = shift;
+    my ($MsgID) = validated_list(\@_, MsgID => {isa => 'Int'});
     my $bulk_out_header = pack('C', $MsgID);
     my ($btag, $btag_inverse) = $self->_btags();
     $bulk_out_header .= $btag . $btag_inverse;
 
-    # Reserved. Must be 0x00;
-    $bulk_out_header .= "\x{00}";
+    $bulk_out_header .= $null_byte;    # Reserved. Must be 0x00;
 
     return $bulk_out_header;
 }

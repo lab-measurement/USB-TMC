@@ -128,9 +128,11 @@ sub BUILD {
     $self->_debug(
         "Request clear_feature endpoint_halt for both bulk endpoints."
         );
+
+    $self->clear_halt_out();
+    $self->clear_halt_in();
     $self->clear_feature_endpoint_out();
     $self->clear_feature_endpoint_in();
-
 }
 
 sub _get_endpoint_addresses {
@@ -186,7 +188,8 @@ sub dev_dep_msg_in {
     
     my $endpoint = $self->bulk_in_endpoint();
     my $data = $self->handle()->bulk_transfer_read(
-        $endpoint, $length + BULK_HEADER_LENGTH, $timeout
+        $endpoint, $length + BULK_HEADER_LENGTH
+        , $timeout
         );
     
     if (length $data < BULK_HEADER_LENGTH) {
@@ -273,6 +276,7 @@ sub clear {
     my $wValue = 0;
     my $wIndex = 0; # FIXME: interface number
     return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, 1, $timeout);
+    # FIXME: check clear status in loop.
     
 }
 

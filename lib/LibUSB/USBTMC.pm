@@ -2,7 +2,8 @@ use strict;
 use warnings;
 package LibUSB::USBTMC;
 
-use LibUSB;
+use LibUSB; # import the LIBUSB_* constants.
+use LibUSB::Moo;
 use Moose;
 use MooseX::Params::Validate 'validated_list';
 use Carp;
@@ -39,21 +40,21 @@ has 'pid' => (
 
 has 'ctx' => (
     is => 'ro',
-    isa => 'LibUSB',
+    isa => 'LibUSB::Moo',
     init_arg => undef,
     writer => '_ctx',
     );
 
 has 'device' => (
     is => 'ro',
-    isa => 'LibUSB::Device',
+    isa => 'LibUSB::Moo::Device',
     init_arg => undef,
     writer => '_device',
     );
 
 has 'handle' => (
     is => 'ro',
-    isa => 'LibUSB::Device::Handle',
+    isa => 'LibUSB::Moo::Device::Handle',
     init_arg => undef,
     writer => '_handle',
     );
@@ -102,10 +103,16 @@ sub _debug {
 
 sub BUILD {
     my $self = shift;
-    my $ctx = LibUSB->init();
+    my $ctx = LibUSB::Moo->init();
     $ctx->set_debug($self->libusb_log_level());
-    
+
+    # FIXME: use iSerial to search for device. Provide utility function in
+    # LibUSB::Moo?
     my $handle = $ctx->open_device_with_vid_pid($self->vid(), $self->pid());
+
+    # Clean up.
+    $handle->reset_device();
+    
     my $device = $handle->get_device();
     
     eval {
@@ -113,8 +120,9 @@ sub BUILD {
         $self->_debug("enable auto detatch of kernel driver.");
         $handle->set_auto_detach_kernel_driver(1);
     };
-
-    # FIXME: is interface always 0. Search for USBTMC interface?
+    
+    
+    # FIXME: is interface always 0? Search for USBTMC interface?
 
     $self->_debug("Claim USBTMC interface.");
     $handle->claim_interface(0);

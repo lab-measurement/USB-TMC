@@ -333,3 +333,8 @@ sub clear_halt_in {
 __PACKAGE__->meta->make_immutable();
 
 1;
+
+=head1 NAME
+
+LibUSB::USBTMC - USB Test and Measurement Class (USBTMC) client driver
+

@@ -1,2 +1,2 @@
-- does 'detach_kernel_driver' work as non-root? (not avail on windows + darwin.)
+- timeout caching
 - perltidy script

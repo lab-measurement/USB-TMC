@@ -82,6 +82,12 @@ has 'btag' => (
     default => 0,
     );
 
+has 'reset_device' => (
+    is => 'ro',
+    isa => 'Bool',
+    default => 0,
+    );
+
 has 'debug_mode' => (
     is => 'ro',
     isa => 'Bool',
@@ -109,9 +115,11 @@ sub BUILD {
     # FIXME: use iSerial to search for device. Provide utility function in
     # LibUSB::Moo?
     my $handle = $ctx->open_device_with_vid_pid($self->vid(), $self->pid());
-
-    # Clean up.
-    $handle->reset_device();
+    
+    if ($self->reset_device()) {
+        # Clean up.
+        $handle->reset_device();
+    }
     
     my $device = $handle->get_device();
     
@@ -150,6 +158,20 @@ sub _get_endpoint_addresses {
     $self->_bulk_in_endpoint(0x86);
 }
 
+sub query {
+    my $self = shift;
+    my ($data, $length, $timeout) = validated_list(
+        \@_,
+        data => {isa => 'Str'},
+        length => {isa => 'Int'},
+        timeout => {isa => 'Int', default => 5000},
+        );
+    
+    $self->write(data => $data, timeout => $timeout);
+    return $self->read(length => $length, timeout => $timeout);
+}
+        
+        
 sub write {
     my $self = shift;
     return $self->dev_dep_msg_out(@_);

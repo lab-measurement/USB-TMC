@@ -10,7 +10,7 @@ use LibUSB::USBTMC;
 use Benchmark 'timethis';
 
 my $driver = LibUSB::USBTMC->new(
-    vid => 0x0957, pid => 0x0607,
+    vid => 0x0957, pid => 0x0607, # serial => 'MY47000419'
     # debug_mode => 1, 
     # libusb_log_level => LIBUSB_LOG_LEVEL_DEBUG
     );
@@ -20,9 +20,9 @@ $driver->write(data => "*CLS\n");
 $driver->write(data => "VOLT:NPLC 0.006\n");
 
 #timethis(1000, sub {print $driver->query(data => ":read?\n", length => 200);});
-for my $i (1..100) {
+for my $i (1..300) {
     say $i;
-    print $driver->query(data => "*IDN?\n", length => 200);
+    #    print $driver->query(data => "*IDN?\n", length => 200);
     print $driver->query(data => ":read?\n", length => 200);
 }
 

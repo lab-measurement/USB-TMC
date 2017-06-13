@@ -38,6 +38,11 @@ has 'pid' => (
     required => 1
     );
 
+has 'serial' => (
+    is => 'ro',
+    isa => 'Str',
+    );
+
 has 'ctx' => (
     is => 'ro',
     isa => 'LibUSB::Moo',
@@ -112,9 +117,16 @@ sub BUILD {
     my $ctx = LibUSB::Moo->init();
     $ctx->set_debug($self->libusb_log_level());
 
-    # FIXME: use iSerial to search for device. Provide utility function in
-    # LibUSB::Moo?
-    my $handle = $ctx->open_device_with_vid_pid($self->vid(), $self->pid());
+    my $handle;
+    if ($self->serial()) {
+        $handle = $ctx->open_device_with_vid_pid_serial(
+            $self->vid(), $self->pid(), $self->serial());
+    }
+    else {
+        # Croak if we have multiple devices with the same vid:pid.
+        $handle = $ctx->open_device_with_vid_pid_unique(
+            $self->vid(), $self->pid());
+    }
     
     if ($self->reset_device()) {
         # Clean up.
@@ -125,7 +137,7 @@ sub BUILD {
     
     eval {
         # This will throw on windows and darwin. Catch exception with eval.
-        $self->_debug("enable auto detatch of kernel driver.");
+        $self->_debug("enable auto detach of kernel driver.");
         $handle->set_auto_detach_kernel_driver(1);
     };
     

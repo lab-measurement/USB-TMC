@@ -2,8 +2,7 @@ use strict;
 use warnings;
 package LibUSB::USBTMC;
 
-use LibUSB; # import the LIBUSB_* constants.
-use LibUSB::Moo;
+use LibUSB;
 use Moose;
 use MooseX::Params::Validate 'validated_list';
 use Carp;
@@ -45,21 +44,21 @@ has 'serial' => (
 
 has 'ctx' => (
     is => 'ro',
-    isa => 'LibUSB::Moo',
+    isa => 'LibUSB',
     init_arg => undef,
     writer => '_ctx',
     );
 
 has 'device' => (
     is => 'ro',
-    isa => 'LibUSB::Moo::Device',
+    isa => 'LibUSB::Device',
     init_arg => undef,
     writer => '_device',
     );
 
 has 'handle' => (
     is => 'ro',
-    isa => 'LibUSB::Moo::Device::Handle',
+    isa => 'LibUSB::Device::Handle',
     init_arg => undef,
     writer => '_handle',
     );
@@ -114,7 +113,7 @@ sub _debug {
 
 sub BUILD {
     my $self = shift;
-    my $ctx = LibUSB::Moo->init();
+    my $ctx = LibUSB->init();
     $ctx->set_debug($self->libusb_log_level());
 
     my $handle;

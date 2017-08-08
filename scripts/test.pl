@@ -4,7 +4,6 @@ use warnings;
 use strict;
 
 use lib 'lib';
-use LibUSB;
 use LibUSB::USBTMC;
 
 use Benchmark 'timethis';
@@ -16,7 +15,7 @@ my $driver = LibUSB::USBTMC->new(
     );
 
 #$driver->write(data => "*RST\n");
-$driver->write(data => "*CLS\n");
+#$driver->write(data => "*CLS\n");
 $driver->write(data => "VOLT:NPLC 0.006\n");
 
 #timethis(1000, sub {print $driver->query(data => ":read?\n", length => 200);});

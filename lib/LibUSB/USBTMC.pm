@@ -1,11 +1,14 @@
 use strict;
 use warnings;
+use 5.010;
+
 package LibUSB::USBTMC;
 
 use LibUSB;
 use Moose;
 use MooseX::Params::Validate 'validated_list';
 use Carp;
+use Data::Dumper 'Dumper';
 
 use constant {
     MSGID_DEV_DEP_MSG_OUT => 1,
@@ -89,7 +92,7 @@ has 'btag' => (
 has 'reset_device' => (
     is => 'ro',
     isa => 'Bool',
-    default => 0,
+    default => 1,
     );
 
 has 'debug_mode' => (
@@ -129,6 +132,7 @@ sub BUILD {
     
     if ($self->reset_device()) {
         # Clean up.
+        $self->_debug("Doing device reset.");
         $handle->reset_device();
     }
     
@@ -141,16 +145,17 @@ sub BUILD {
     };
     
     
-    # FIXME: is interface always 0? Search for USBTMC interface?
 
-    $self->_debug("Claim USBTMC interface.");
-    $handle->claim_interface(0);
     
     $self->_ctx($ctx);
     $self->_device($device);
     $self->_handle($handle);
 
-    $self->_get_endpoint_addresses();
+    my $usbtmc_interface_number = $self->_find_usbtmc_interface();
+    $self->_debug("Claiming interface no. $usbtmc_interface_number");
+    $handle->claim_interface($usbtmc_interface_number);
+    
+    $self->_get_endpoint_addresses($usbtmc_interface_number);
 
     $self->_debug(
         "Request clear_feature endpoint_halt for both bulk endpoints."
@@ -162,11 +167,59 @@ sub BUILD {
     $self->clear_feature_endpoint_in();
 }
 
+sub _find_usbtmc_interface {
+    # Relevant if device has additional non-TMC interfaces.
+    my $self = shift;
+    my $config = $self->device()->get_active_config_descriptor();
+    my @interfaces = @{$config->{interface}};
+    for my $interface (@interfaces) {
+        if ($interface->{bInterfaceClass} == 0xFE
+            && $interface->{bInterfaceSubClass} == 3) {
+            my $number = $interface->{bInterfaceNumber};
+            $self->_debug("Found USBTMC interface at number $number");
+            return $number;
+        }
+    }
+    croak "Did not find a USBTMC interface. Interfaces: ", Dumper \@interfaces;
+}
+
 sub _get_endpoint_addresses {
     my $self = shift;
-    # FIXME: loop over endpoints. This is just for Agilent 34410A.
-    $self->_bulk_out_endpoint(0x2);
-    $self->_bulk_in_endpoint(0x86);
+    my $interface_number = shift;
+    
+    my $config = $self->device()->get_active_config_descriptor();
+    my $interface = $config->{interface}[$interface_number];
+    my @endpoints = @{$interface->{endpoint}};
+
+    if (@endpoints != 2 && @endpoints != 3) {
+        croak "USBTMC interface needs either 2 or 3 endpoints.";
+    }
+
+    my ($bulk_out_address, $bulk_in_address);
+    for my $endpoint (@endpoints) {
+        my $address = $endpoint->{bEndpointAddress};
+        my $direction = $address & LIBUSB_ENDPOINT_DIR_MASK;
+        my $type = $endpoint->{bmAttributes} & LIBUSB_TRANSFER_TYPE_MASK;
+        if ($type == LIBUSB_TRANSFER_TYPE_BULK) {
+            if ($direction == LIBUSB_ENDPOINT_OUT) {
+                $self->_debug("Found bulk-out endpoint with address ".
+                              sprintf("0x%x", $address));
+                $bulk_out_address = $address;
+            }
+            elsif ($direction == LIBUSB_ENDPOINT_IN) {
+                $self->_debug("Found bulk-in endpoint with address ".
+                              sprintf("0x%x", $address));
+                $bulk_in_address = $address;
+            }
+        }
+    }
+    
+    if (!$bulk_out_address || !$bulk_in_address) {
+        croak "Did not find all required endpoints.";
+    }
+    
+    $self->_bulk_out_endpoint($bulk_out_address);
+    $self->_bulk_in_endpoint($bulk_in_address);
 }
 
 sub query {
@@ -207,7 +260,7 @@ sub dev_dep_msg_out {
         timeout => {isa => 'Int', default => 5000},
         );
     
-    $self->_debug("doing dev_dep_msg_out with data $data");
+    $self->_debug("Doing dev_dep_msg_out with data $data");
     
     my $header = $self->_dev_dep_msg_out_header(length => length $data);
     my $endpoint = $self->bulk_out_endpoint();
@@ -225,7 +278,7 @@ sub dev_dep_msg_in {
         timeout => {isa => 'Int', default => 5000}
         );
     
-    $self->_debug("doing dev_dep_msg_in with length $length");
+    $self->_debug("Doing dev_dep_msg_in with length $length");
     
     my $endpoint = $self->bulk_in_endpoint();
     my $data = $self->handle()->bulk_transfer_read(
@@ -249,7 +302,7 @@ sub request_dev_dep_msg_in {
         length => {isa => 'Int', default => 1000},
         timeout => {isa => 'Int', default => 5000},
         );
-    $self->_debug("doing request_dev_dep_msg_in with length $length");
+    $self->_debug("Doing request_dev_dep_msg_in with length $length");
     my $header = $self->_request_dev_dep_msg_in_header(length => $length);
     my $endpoint = $self->bulk_out_endpoint();
 

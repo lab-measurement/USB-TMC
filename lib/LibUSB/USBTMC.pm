@@ -107,6 +107,20 @@ has 'libusb_log_level' => (
     default => LIBUSB_LOG_LEVEL_WARNING,
     );
 
+has 'term_char' => (
+    is => 'ro',
+    isa => 'Maybe[Str]',
+    default => undef,
+    );
+
+has 'interface_number' => (
+    is => 'ro',
+    isa => 'Int',
+    writer => '_interface_number',
+    init_arg => undef,
+    
+    );
+
 sub _debug {
     my $self = shift;
     if ($self->debug_mode()) {
@@ -116,6 +130,19 @@ sub _debug {
 
 sub BUILD {
     my $self = shift;
+
+    # TermChar valid?
+    my $term_char = $self->term_char();
+    if (defined $term_char) {
+        if (length $term_char != 1 || $term_char =~ /[^[:ascii:]]/) {
+            croak "invalid TermChar";
+        }
+        $self->_debug("Using TermChar ", Dumper $term_char);
+    }
+    else {
+        $self->_debug("Not using TermChar");
+    }
+
     my $ctx = LibUSB->init();
     $ctx->set_debug($self->libusb_log_level());
 
@@ -152,10 +179,12 @@ sub BUILD {
     $self->_handle($handle);
 
     my $usbtmc_interface_number = $self->_find_usbtmc_interface();
+    $self->_interface_number($usbtmc_interface_number);
+    
     $self->_debug("Claiming interface no. $usbtmc_interface_number");
     $handle->claim_interface($usbtmc_interface_number);
     
-    $self->_get_endpoint_addresses($usbtmc_interface_number);
+    $self->_get_endpoint_addresses();
 
     $self->_debug(
         "Request clear_feature endpoint_halt for both bulk endpoints."
@@ -185,7 +214,7 @@ sub _find_usbtmc_interface {
 
 sub _get_endpoint_addresses {
     my $self = shift;
-    my $interface_number = shift;
+    my $interface_number = $self->interface_number();
     
     my $config = $self->device()->get_active_config_descriptor();
     my $interface = $config->{interface}[$interface_number];
@@ -327,9 +356,16 @@ sub _request_dev_dep_msg_in_header {
     my $header = $self->_bulk_out_header(MSGID => MSGID_REQUEST_DEV_DEP_MSG_IN);
     # Transfer length
     $header .= pack('V', $length);
-    # Term char enabled? 2 or 0. make argument
-    $header .= pack('C', 2); # Fixme: make argument
-    $header .= "\n";         # Term char
+    
+    my $term_char = $self->term_char();
+    if (defined $term_char) {
+        $header .= pack('C', 2);
+        $header .= $term_char;
+    }
+    else {
+        $header .= pack('C', 0);
+        $header .= $null_byte;
+    }
     $header .= $null_byte x 2; # Reserved. Must be 0x00.
     
     return $header;
@@ -368,8 +404,9 @@ sub clear {
     my $bmRequestType = 0xa1;   # See USBTMC 4.2.1.6 INITIATE_CLEAR
     my $bRequest = 5;
     my $wValue = 0;
-    my $wIndex = 0; # FIXME: interface number
-    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, 1, $timeout);
+    my $wIndex = $self->interface_number();
+    my $wLength = 1;
+    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $timeout);
     # FIXME: check clear status in loop.
     
 }
@@ -414,6 +451,42 @@ sub clear_halt_in {
     my $self = shift;
     my $endpoint = $self->bulk_in_endpoint();
     $self->handle()->clear_halt($endpoint);
+}
+
+sub get_capabilities {
+    my $self = shift;
+    my ($timeout) = validated_list(
+        \@_, timeout => {isa => 'Int', default => 5000});
+    
+    my $bmRequestType = 0xa1;
+    my $bRequest = 7;
+    my $wValue = 0;
+    my $wIndex = $self->interface_number();
+    my $wLength = 0x18;
+
+    my $handle = $self->handle();
+    my $caps = $handle->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $timeout);
+    if (length $caps != $wLength) {
+        croak "Incomplete response in get_capabilities.";
+    }
+    
+    my $status = unpack('C', substr($caps, 0, 1));
+    
+    if ($status != 1) {
+        croak "GET_CAPABILITIES not successfull. status = $status";
+    }
+    
+    my $bcdUSBTMC = unpack('v', substr($caps, 2, 2));
+    my $interface_capabilities = unpack('C', substr($caps, 4, 1));
+    my $device_capabilites = unpack('C', substr($caps, 5, 1));
+    
+    return {
+        bcdUSBTMC => $bcdUSBTMC,
+        listen_only => $interface_capabilities & 1,
+        talk_only => ($interface_capabilities >> 1) & 1,
+        accept_indicator_pulse => ($interface_capabilities >> 2) & 1,
+        support_term_char => $device_capabilites & 1,
+    };
 }
 
 __PACKAGE__->meta->make_immutable();

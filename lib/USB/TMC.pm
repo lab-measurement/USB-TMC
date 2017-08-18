@@ -320,8 +320,12 @@ sub dev_dep_msg_in {
     }
     
     my $header = substr($data, 0, BULK_HEADER_LENGTH);
-    # FIXME: strip trailing alignment bytes.
-    $data = substr($data, BULK_HEADER_LENGTH);
+
+    my $transfer_size = unpack('V', substr($header, 4, 4));
+    
+    # Data may contain trailing alignment bytes!
+    # strip them by returning only $transfer_size bytes.
+    $data = substr($data, BULK_HEADER_LENGTH, $transfer_size);
     return $data;
 }
 

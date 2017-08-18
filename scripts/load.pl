@@ -4,16 +4,16 @@ use warnings;
 use strict;
 
 use lib 'lib';
-use LibUSB::USBTMC;
+use USB::TMC;
 use Data::Dumper;
 #use YAML::XS;
 
 use Benchmark 'timethis';
 
-my $driver = LibUSB::USBTMC->new(
+my $driver = USB::TMC->new(
     vid => 0x0957, pid => 0x0607, # serial => 'MY47000419'
-    debug_mode => 1,
-    reset_device => 1,
+    #debug_mode => 1,
+    #reset_device => 1,
     # libusb_log_level => LIBUSB_LOG_LEVEL_DEBUG
     );
 

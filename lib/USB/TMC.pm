@@ -2,9 +2,9 @@ use strict;
 use warnings;
 use 5.010;
 
-package LibUSB::USBTMC;
+package USB::TMC;
 
-use LibUSB;
+use USB::LibUSB;
 use Moose;
 use MooseX::Params::Validate 'validated_list';
 use Carp;
@@ -47,21 +47,21 @@ has 'serial' => (
 
 has 'ctx' => (
     is => 'ro',
-    isa => 'LibUSB',
+    isa => 'USB::LibUSB',
     init_arg => undef,
     writer => '_ctx',
     );
 
 has 'device' => (
     is => 'ro',
-    isa => 'LibUSB::Device',
+    isa => 'USB::LibUSB::Device',
     init_arg => undef,
     writer => '_device',
     );
 
 has 'handle' => (
     is => 'ro',
-    isa => 'LibUSB::Device::Handle',
+    isa => 'USB::LibUSB::Device::Handle',
     init_arg => undef,
     writer => '_handle',
     );
@@ -143,7 +143,7 @@ sub BUILD {
         $self->_debug("Not using TermChar");
     }
 
-    my $ctx = LibUSB->init();
+    my $ctx = USB::LibUSB->init();
     $ctx->set_debug($self->libusb_log_level());
 
     my $handle;
@@ -496,5 +496,5 @@ __PACKAGE__->meta->make_immutable();
 
 =head1 NAME
 
-LibUSB::USBTMC - USB Test and Measurement Class (USBTMC) client driver
+USB::TMC - USB Test and Measurement Class (USBTMC) client driver
 

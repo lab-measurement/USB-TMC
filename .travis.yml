@@ -1,0 +1,50 @@
+# Can only compile. Running fails with libusb_init as the travis kernel does
+# not have usb support apparently.
+dist: trusty
+sudo: false
+
+addons:
+  apt:
+    packages:
+      - pkg-config
+      - libusb-1.0-0-dev
+
+language: perl
+
+perl:
+  - 5.26
+  - 5.24
+  - 5.22
+  - 5.20
+  - 5.18
+  - 5.16
+  - 5.14
+  - 5.12
+  - 5.10
+  - 5.8
+
+install:
+  - perl Makefile.PL
+  - make
+  - cpanm Test::Pod
+
+  # Install the DZIL dependencies
+  - cpanm --quiet --notest --skip-satisfied Dist::Zilla
+
+  # Install DZIL plugins etc if needed
+  - cd $TRAVIS_BUILD_DIR
+  - dzil authordeps --missing | grep -vP '[^\w:]' | xargs cpanm --quiet --notest
+  # install dependencies
+  - dzil listdeps --missing --cpanm | grep -vP '[^\w:~"\.]' | xargs cpanm --quiet --notest
+  
+script:
+  - prove --verbose --lib --recurse t/
+
+notifications:
+  email: false
+  irc: 
+    channels: "chat.freenode.net#labmeasurement"
+    on_success: always
+    on_failure: always
+    use_notice: true
+    skip_join: true

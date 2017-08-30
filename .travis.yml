@@ -24,10 +24,6 @@ perl:
   - 5.8
 
 install:
-  - perl Makefile.PL
-  - make
-  - cpanm Test::Pod
-
   # Install the DZIL dependencies
   - cpanm --quiet --notest --skip-satisfied Dist::Zilla
 

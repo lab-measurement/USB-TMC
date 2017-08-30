@@ -1,6 +1,5 @@
 use strict;
 use warnings;
-use 5.010;
 
 package USB::TMC;
 
@@ -120,6 +119,23 @@ has 'interface_number' => (
     init_arg => undef,
     
     );
+
+has 'timeout' => (
+    is => 'rw',
+    isa => 'Num',
+    default => 5,
+    );
+
+sub _get_timeout_arg {
+    my $self = shift;
+    my $timeout = shift;
+    if (not defined $timeout) {
+        $timeout = $self->timeout();
+    }
+
+    $timeout = sprintf("%.0f", $timeout * 1000);
+    return $timeout;
+}
 
 sub _debug {
     my $self = shift;
@@ -257,9 +273,9 @@ sub query {
         \@_,
         data => {isa => 'Str'},
         length => {isa => 'Int'},
-        timeout => {isa => 'Int', default => 5000},
+        timeout => {isa => 'Maybe[Num]', optional => 1},
         );
-    
+
     $self->write(data => $data, timeout => $timeout);
     return $self->read(length => $length, timeout => $timeout);
 }
@@ -275,8 +291,9 @@ sub read {
     my ($length, $timeout) = validated_list(
         \@_,
         length => {isa => 'Int'},
-        timeout => {isa => 'Int', default => 5000}
+        timeout => {isa => 'Maybe[Num]', optional => 1}
         );
+
     $self->request_dev_dep_msg_in(length => $length, timeout => $timeout);
     return $self->dev_dep_msg_in(length => $length, timeout => $timeout);
 }
@@ -286,8 +303,10 @@ sub dev_dep_msg_out {
     my ($data, $timeout) = validated_list(
         \@_,
         data => {isa => 'Str'},
-        timeout => {isa => 'Int', default => 5000},
+        timeout => {isa => 'Maybe[Num]', optional => 1},
         );
+
+    $timeout = $self->_get_timeout_arg($timeout);
     
     $self->_debug("Doing dev_dep_msg_out with data $data");
     
@@ -304,8 +323,10 @@ sub dev_dep_msg_in {
     my ($length, $timeout) = validated_list(
         \@_,
         length => {isa => 'Int'},
-        timeout => {isa => 'Int', default => 5000}
+        timeout => {isa => 'Maybe[Num]', optional => 1}
         );
+
+    $timeout = $self->_get_timeout_arg($timeout);
     
     $self->_debug("Doing dev_dep_msg_in with length $length");
     
@@ -334,8 +355,11 @@ sub request_dev_dep_msg_in {
     my ($length, $timeout) = validated_list(
         \@_,
         length => {isa => 'Int', default => 1000},
-        timeout => {isa => 'Int', default => 5000},
+        timeout => {isa => 'Maybe[Num]', optional => 1},
         );
+
+    $timeout = $self->_get_timeout_arg($timeout);
+    
     $self->_debug("Doing request_dev_dep_msg_in with length $length");
     my $header = $self->_request_dev_dep_msg_in_header(length => $length);
     my $endpoint = $self->bulk_out_endpoint();
@@ -404,7 +428,9 @@ sub _btags {
 sub clear {
     my $self = shift;
     my ($timeout) = validated_list(
-        \@_, timeout => {isa => 'Int', default => 5000});
+        \@_, timeout => {isa => 'Maybe[Num]', optional => 1});
+
+    $timeout = $self->_get_timeout_arg($timeout);
     
     my $bmRequestType = 0xa1;   # See USBTMC 4.2.1.6 INITIATE_CLEAR
     my $bRequest = 5;
@@ -419,7 +445,9 @@ sub clear {
 sub clear_feature_endpoint_out {
     my $self = shift;
     my ($timeout) = validated_list(
-        \@_, timeout => {isa => 'Int', default => 5000});
+        \@_, timeout => {isa => 'Maybe[Num]', optional => 1});
+
+    $timeout = $self->_get_timeout_arg($timeout);
     
     my $endpoint = $self->bulk_out_endpoint();
     my $bmRequestType = LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_STANDARD
@@ -434,7 +462,9 @@ sub clear_feature_endpoint_out {
 sub clear_feature_endpoint_in {
     my $self = shift;
     my ($timeout) = validated_list(
-        \@_, timeout => {isa => 'Int', default => 5000});
+        \@_, timeout => {isa => 'Maybe[Num]', optional => 1});
+
+    $timeout = $self->_get_timeout_arg($timeout);
     
     my $endpoint = $self->bulk_in_endpoint();
     my $bmRequestType = LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_STANDARD
@@ -461,7 +491,9 @@ sub clear_halt_in {
 sub get_capabilities {
     my $self = shift;
     my ($timeout) = validated_list(
-        \@_, timeout => {isa => 'Int', default => 5000});
+        \@_, timeout => {isa => 'Maybe[Num]', optional => 1});
+
+    $timeout = $self->_get_timeout_arg($timeout);
     
     my $bmRequestType = 0xa1;
     my $bRequest = 7;

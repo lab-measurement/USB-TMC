@@ -14,15 +14,17 @@ my $driver = USB::TMC->new(
     # libusb_log_level => LIBUSB_LOG_LEVEL_DEBUG
     );
 
-$driver->write(data => "VOLT:NPLC 2.01\n");
-print $driver->query(data => "VOLT:NPLC?\n", length => 200);
-sleep 3;
-#timethis(1000, sub {print $driver->query(data => ":read?\n", length => 200);});
-for my $i (1..300) {
-    say $i;
-    #    print $driver->query(data => "*IDN?\n", length => 200);
-    print $driver->query(data => ":read?\n", length => 200);
-}
+$driver->write(data => "*CLS\n");
+$driver->write(data => "VOLT:NPLC 10\n", timeout => 0.001);
+print $driver->query(data => ":read?\n", length => 200, timeout => 1);
+
+# sleep 3;
+# #timethis(1000, sub {print $driver->query(data => ":read?\n", length => 200);});
+# for my $i (1..300) {
+#     say $i;
+#     print $driver->query(data => "*IDN?\n", length => 200);
+#     #print $driver->query(data => ":read?\n", length => 200);
+# }
 
 # for (1..1000) {
 #     $driver->write(data => ":read?");

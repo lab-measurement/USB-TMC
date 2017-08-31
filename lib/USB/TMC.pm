@@ -1,3 +1,32 @@
+=head1 NAME
+
+USB::TMC - Perl interface to USBTMC Test&Measurement backend.
+
+=head1 SYNOPSIS
+
+ use USB::TMC;
+
+ # Open usb connection to  Agilent 34410A digital multimeter
+ my $ctx = USB::TMC->new(vid => 0x0957, pid => 0x0607,
+                         serial => 'MY47000419' # only needed if vid/pid is ambiguous
+ );
+ 
+ $driver->write(data => "*CLS\n");
+ $driver->write(data => "VOLT:NPLC 10\n");
+
+ print $driver->query(data => ":read?\n", length => 100);
+ 
+ my $capabilities = $driver->get_capabilities();
+ my $support_term_char = $capabilities->{support_term_char};
+
+=head1 DESCRIPTION
+
+This module provides a user-space USBTMC driver based on L<USB::LibUSB>.
+
+=head1 METHODS
+
+=cut
+
 use strict;
 use warnings;
 
@@ -144,6 +173,24 @@ sub _debug {
     }
 }
 
+=head2 new
+
+ my $ctx = USB::TMC->new(
+     vid => $vid,
+     pid => $pid,
+     serial => $serial, # optional
+     reset_device => 0, # default: do device reset
+     debug_mode => 1,   # print lots of debug messages
+     libusb_log_level => LIBUSB_LOG_LEVEL_DEBUG,
+     term_char => "\n", # Stop a read request if the term_char occurs in the
+                        # byte stream. Default: do not use term char.
+     timeout => 10,     # timeout in seconds. default: 5
+ );
+
+=cut
+     
+     
+     
 sub BUILD {
     my $self = shift;
 
@@ -267,24 +314,19 @@ sub _get_endpoint_addresses {
     $self->_bulk_in_endpoint($bulk_in_address);
 }
 
-sub query {
-    my $self = shift;
-    my ($data, $length, $timeout) = validated_list(
-        \@_,
-        data => {isa => 'Str'},
-        length => {isa => 'Int'},
-        timeout => {isa => 'Maybe[Num]', optional => 1},
-        );
+=head2 write  
 
-    $self->write(data => $data, timeout => $timeout);
-    return $self->read(length => $length, timeout => $timeout);
-}
-        
-        
+
+=cut
+
 sub write {
     my $self = shift;
     return $self->dev_dep_msg_out(@_);
 }
+
+=head3 read
+
+=cut
 
 sub read {
     my $self = shift;
@@ -297,6 +339,25 @@ sub read {
     $self->request_dev_dep_msg_in(length => $length, timeout => $timeout);
     return $self->dev_dep_msg_in(length => $length, timeout => $timeout);
 }
+
+=head3 query
+
+
+=cut
+
+sub query {
+    my $self = shift;
+    my ($data, $length, $timeout) = validated_list(
+        \@_,
+        data => {isa => 'Str'},
+        length => {isa => 'Int'},
+        timeout => {isa => 'Maybe[Num]', optional => 1},
+        );
+
+    $self->write(data => $data, timeout => $timeout);
+    return $self->read(length => $length, timeout => $timeout);
+}
+
 
 sub dev_dep_msg_out {
     my $self = shift;
@@ -488,6 +549,12 @@ sub clear_halt_in {
     $self->handle()->clear_halt($endpoint);
 }
 
+=head2 get_capabilities
+
+
+=cut
+
+
 sub get_capabilities {
     my $self = shift;
     my ($timeout) = validated_list(
@@ -530,7 +597,4 @@ __PACKAGE__->meta->make_immutable();
 
 1;
 
-=head1 NAME
-
-USB::TMC - USB Test and Measurement Class (USBTMC) client driver
 

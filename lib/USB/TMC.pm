@@ -1,6 +1,7 @@
 =head1 NAME
 
-USB::TMC - Perl interface to USBTMC Test&Measurement backend.
+USB::TMC - Perl interface to L<USB Test & Measurement|http://www.usb.org/developers/docs/devclass_docs/USBTMC_1_006a.zip>
+(USBTMC) backend.
 
 =head1 SYNOPSIS
 

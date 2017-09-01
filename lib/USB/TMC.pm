@@ -7,8 +7,10 @@ USB::TMC - Perl interface to USBTMC Test&Measurement backend.
  use USB::TMC;
 
  # Open usb connection to  Agilent 34410A digital multimeter
- my $usbtmc = USB::TMC->new(vid => 0x0957, pid => 0x0607,
-                         serial => 'MY47000419' # only needed if vid/pid is ambiguous
+ my $usbtmc = USB::TMC->new(
+     vid => 0x0957,
+     pid => 0x0607,
+     serial => 'MY47000419', # only needed if vid/pid is ambiguous
  );
  
  $usbtmc->write(data => "*CLS\n");
@@ -332,7 +334,7 @@ sub write {
     $self->dev_dep_msg_out(@_);
 }
 
-=head3 read
+=head2 read
 
  my $data = $usbtmc->read(length => $read_length, timeout => $timeout);
 
@@ -355,7 +357,7 @@ sub read {
     return $self->dev_dep_msg_in(length => $length, timeout => $timeout);
 }
 
-=head3 query
+=head2 query
 
  my $data = $usbtmc->query(data => $data, length => $read_length, timeout => $timeout);
 

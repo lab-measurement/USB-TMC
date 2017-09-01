@@ -7,16 +7,16 @@ USB::TMC - Perl interface to USBTMC Test&Measurement backend.
  use USB::TMC;
 
  # Open usb connection to  Agilent 34410A digital multimeter
- my $ctx = USB::TMC->new(vid => 0x0957, pid => 0x0607,
+ my $usbtmc = USB::TMC->new(vid => 0x0957, pid => 0x0607,
                          serial => 'MY47000419' # only needed if vid/pid is ambiguous
  );
  
- $driver->write(data => "*CLS\n");
- $driver->write(data => "VOLT:NPLC 10\n");
+ $usbtmc->write(data => "*CLS\n");
+ $usbtmc->write(data => "VOLT:NPLC 10\n");
 
- print $driver->query(data => ":read?\n", length => 100);
+ print $usbtmc->query(data => ":read?\n", length => 100);
  
- my $capabilities = $driver->get_capabilities();
+ my $capabilities = $usbtmc->get_capabilities();
  my $support_term_char = $capabilities->{support_term_char};
 
 =head1 DESCRIPTION
@@ -24,6 +24,10 @@ USB::TMC - Perl interface to USBTMC Test&Measurement backend.
 This module provides a user-space USBTMC driver based on L<USB::LibUSB>.
 
 =head1 METHODS
+
+Errors with USB transfers are handled internally and are handled with croak.
+
+Use L<default timeout|/new> if C<timeout> arg is not given.
 
 =cut
 
@@ -175,7 +179,7 @@ sub _debug {
 
 =head2 new
 
- my $ctx = USB::TMC->new(
+ my $usbtmc = USB::TMC->new(
      vid => $vid,
      pid => $pid,
      serial => $serial, # optional
@@ -316,17 +320,28 @@ sub _get_endpoint_addresses {
 
 =head2 write  
 
+ $usbtmc->write(data => $data, timeout => $timeout);
+
+Do DEV_DEP_MSG_OUT transfer.
+
 
 =cut
 
 sub write {
     my $self = shift;
-    return $self->dev_dep_msg_out(@_);
+    $self->dev_dep_msg_out(@_);
 }
 
 =head3 read
 
+ my $data = $usbtmc->read(length => $read_length, timeout => $timeout);
+
+Do REQUEST_DEV_DEP_MSG_IN and DEV_DEP_MSG_IN transfers.
+
+Typically you will not need this method and only use L</query>.
+
 =cut
+
 
 sub read {
     my $self = shift;
@@ -342,6 +357,9 @@ sub read {
 
 =head3 query
 
+ my $data = $usbtmc->query(data => $data, length => $read_length, timeout => $timeout);
+
+Send a query command and read the result.
 
 =cut
 
@@ -551,6 +569,25 @@ sub clear_halt_in {
 
 =head2 get_capabilities
 
+ my $capabilites = $usbtmc->get_capabilities(timeout => $timeout);
+
+Do GET_CAPABILITIES request.
+
+The C<$capabilities> hash contains the following keys:
+
+=over
+
+=item bcdUSBTMC
+
+=item listen_only
+
+=item talk_only
+
+=item accept_indicator_pulse
+
+=item support_term_char
+
+=back
 
 =cut
 

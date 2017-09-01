@@ -31,6 +31,7 @@ install:
   - dzil authordeps --missing | grep -vP '[^\w:]' | xargs cpanm --quiet --notest
   # install dependencies
   - dzil listdeps --missing --cpanm | grep -vP '[^\w:~"\.]' | xargs cpanm --quiet --notest
+  - cpanm Test::Pod
   
 script:
   - prove --verbose --lib --recurse t/

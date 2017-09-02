@@ -1,7 +1,6 @@
 =head1 NAME
 
-USB::TMC - Perl interface to L<USB Test & Measurement|http://www.usb.org/developers/docs/devclass_docs/USBTMC_1_006a.zip>
-(USBTMC) backend.
+USB::TMC - Perl interface to USB Test & Measurement (USBTMC) backend.
 
 =head1 SYNOPSIS
 
@@ -24,11 +23,16 @@ USB::TMC - Perl interface to L<USB Test & Measurement|http://www.usb.org/develop
 
 =head1 DESCRIPTION
 
-This module provides a user-space USBTMC driver based on L<USB::LibUSB>.
+This module provides a user-space L<USBTMC|http://www.usb.org/developers/docs/devclass_docs/USBTMC_1_006a.zip> driver.
+
+Internally this module is based on L<USB::LibUSB>.
+
+Does not yet support the additional features of USBTMC-USB488. But those could
+easily be added if needed.
 
 =head1 METHODS
 
-Errors with USB transfers are handled internally and are handled with croak.
+Errors with USB transfers will result in a croak.
 
 Use L<default timeout|/new> if C<timeout> arg is not given.
 
@@ -188,9 +192,9 @@ sub _debug {
      serial => $serial, # optional
      reset_device => 0, # default: do device reset
      debug_mode => 1,   # print lots of debug messages
-     libusb_log_level => LIBUSB_LOG_LEVEL_DEBUG,
+     libusb_log_level => LIBUSB_LOG_LEVEL_DEBUG, # Import LIBUSB_LOG_LEVEL_* constant from USB::LibUSB
      term_char => "\n", # Stop a read request if the term_char occurs in the
-                        # byte stream. Default: do not use term char.
+                        # byte stream. Default: do not use term char
      timeout => 10,     # timeout in seconds. default: 5
  );
 

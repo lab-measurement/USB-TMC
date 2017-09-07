@@ -264,6 +264,7 @@ sub BUILD {
         "Request clear_feature endpoint_halt for both bulk endpoints."
         );
 
+    $self->clear();
     $self->clear_halt_out();
     $self->clear_halt_in();
     $self->clear_feature_endpoint_out();
@@ -345,8 +346,6 @@ sub write {
 
 Do REQUEST_DEV_DEP_MSG_IN and DEV_DEP_MSG_IN transfers.
 
-Typically you will not need this method and only use L</query>.
-
 =cut
 
 
@@ -358,31 +357,20 @@ sub read {
         timeout => {isa => 'Maybe[Num]', optional => 1}
         );
 
-    $self->request_dev_dep_msg_in(length => $length, timeout => $timeout);
-    return $self->dev_dep_msg_in(length => $length, timeout => $timeout);
+    my $result = '';
+
+    # Do read requests until EOM flag is set.
+    while ($length) {
+        $self->request_dev_dep_msg_in(length => $length, timeout => $timeout);
+        my ($data, $eom) = $self->dev_dep_msg_in(length => $length, timeout => $timeout);
+        $result .= $data;
+        $length -= length($data);
+        if ($eom) {
+            last;
+        }
+    }
+    return $result;
 }
-
-=head2 query
-
- my $data = $usbtmc->query(data => $data, length => $read_length, timeout => $timeout);
-
-Send a query command and read the result.
-
-=cut
-
-sub query {
-    my $self = shift;
-    my ($data, $length, $timeout) = validated_list(
-        \@_,
-        data => {isa => 'Str'},
-        length => {isa => 'Int'},
-        timeout => {isa => 'Maybe[Num]', optional => 1},
-        );
-
-    $self->write(data => $data, timeout => $timeout);
-    return $self->read(length => $length, timeout => $timeout);
-}
-
 
 sub dev_dep_msg_out {
     my $self = shift;
@@ -427,13 +415,23 @@ sub dev_dep_msg_in {
     }
     
     my $header = substr($data, 0, BULK_HEADER_LENGTH);
+    my $msg_id = unpack('C', substr($header, 0, 1));
+    my $transfer_attributes = unpack('C', substr($header, 8, 1));
+    
+    if ($msg_id != MSGID_DEV_DEP_MSG_IN) {
+        croak "dev_dep_msg_in message with wrong message id '$msg_id'";
+    }
 
     my $transfer_size = unpack('V', substr($header, 4, 4));
+    if ($transfer_size == 0) {
+        croak("dev_dep_msg_in: zero transfer size");
+    }
     
     # Data may contain trailing alignment bytes!
     # strip them by returning only $transfer_size bytes.
     $data = substr($data, BULK_HEADER_LENGTH, $transfer_size);
-    return $data;
+    my $eom = $transfer_attributes & 1;
+    return ($data, $eom);
 }
 
 sub request_dev_dep_msg_in {

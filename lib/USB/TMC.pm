@@ -63,6 +63,18 @@ use constant {
     FEATURE_SELECTOR_ENDPOINT_HALT => 0,
 
     BULK_HEADER_LENGTH => 12,
+
+    # bRequest values
+    INITIATE_CLEAR => 5,
+    CHECK_CLEAR_STATUS => 6,
+    GET_CAPABILITIES => 7,
+
+    # status values
+    STATUS_SUCCESS => 0x01,
+    STATUS_PENDING => 0x02,
+    STATUS_FAILED  => 0x80,
+    
+
 };
 
 my $null_byte = "\x{00}";
@@ -175,6 +187,10 @@ sub _get_timeout_arg {
 
     $timeout = sprintf("%.0f", $timeout * 1000);
     return $timeout;
+}
+
+sub _timeout_arg {
+    return (timeout => {isa => 'Maybe[Num]', optional => 1});
 }
 
 sub _debug {
@@ -354,7 +370,7 @@ sub read {
     my ($length, $timeout) = validated_list(
         \@_,
         length => {isa => 'Int'},
-        timeout => {isa => 'Maybe[Num]', optional => 1}
+        _timeout_arg(),
         );
 
     my $result = '';
@@ -377,11 +393,9 @@ sub dev_dep_msg_out {
     my ($data, $timeout) = validated_list(
         \@_,
         data => {isa => 'Str'},
-        timeout => {isa => 'Maybe[Num]', optional => 1},
+        _timeout_arg(),
         );
 
-    $timeout = $self->_get_timeout_arg($timeout);
-    
     $self->_debug("Doing dev_dep_msg_out with data $data");
     
     my $header = $self->_dev_dep_msg_out_header(length => length $data);
@@ -389,7 +403,7 @@ sub dev_dep_msg_out {
 
     # Ensure that total number of bytes is multiple of 4.
     $data .= $null_byte x ((4 - (length $data) % 4) % 4);
-    $self->handle()->bulk_transfer_write($endpoint, $header . $data, $timeout);
+    $self->handle()->bulk_transfer_write($endpoint, $header . $data, $self->_get_timeout_arg($timeout));
 }
 
 sub dev_dep_msg_in {
@@ -397,17 +411,15 @@ sub dev_dep_msg_in {
     my ($length, $timeout) = validated_list(
         \@_,
         length => {isa => 'Int'},
-        timeout => {isa => 'Maybe[Num]', optional => 1}
+        _timeout_arg(),
         );
 
-    $timeout = $self->_get_timeout_arg($timeout);
-    
     $self->_debug("Doing dev_dep_msg_in with length $length");
     
     my $endpoint = $self->bulk_in_endpoint();
     my $data = $self->handle()->bulk_transfer_read(
         $endpoint, $length + BULK_HEADER_LENGTH
-        , $timeout
+        , $self->_get_timeout_arg($timeout)
         );
     
     if (length $data < BULK_HEADER_LENGTH) {
@@ -439,17 +451,15 @@ sub request_dev_dep_msg_in {
     my ($length, $timeout) = validated_list(
         \@_,
         length => {isa => 'Int', default => 1000},
-        timeout => {isa => 'Maybe[Num]', optional => 1},
+        _timeout_arg(),
         );
 
-    $timeout = $self->_get_timeout_arg($timeout);
-    
     $self->_debug("Doing request_dev_dep_msg_in with length $length");
     my $header = $self->_request_dev_dep_msg_in_header(length => $length);
     my $endpoint = $self->bulk_out_endpoint();
 
     # Length of $header is already multiple of 4.
-    $self->handle()->bulk_transfer_write($endpoint, $header, $timeout);
+    $self->handle()->bulk_transfer_write($endpoint, $header, $self->_get_timeout_arg($timeout));
 }
 
 sub _dev_dep_msg_out_header {
@@ -509,30 +519,73 @@ sub _btags {
     return (pack('C', $btag), pack('C', $btag_inverse));
 }
 
+=head2 clear
+
+ $usbtmc->clear(timeout => $timeout);
+
+Do INITIATE_CLEAR / CHECK_CLEAR_STATUS split transaction. On success, send
+CLEAR_FEATURE request to clear the Bulk-OUT Halt.
+
+=cut
+    
 sub clear {
     my $self = shift;
-    my ($timeout) = validated_list(
-        \@_, timeout => {isa => 'Maybe[Num]', optional => 1});
+    my ($timeout) = validated_list(\@_, _timeout_arg());
+    my $initiate_status = $self->initiate_clear(timeout => $timeout);
+    $initiate_status = unpack('C', $initiate_status);
+    if ($initiate_status != STATUS_SUCCESS) {
+        croak "INITIATE_CLEAR failed with status $initiate_status";
+    }
+    
+    # Check clear status
+    while (1) {
+        my $clear_status = $self->check_clear_status(timeout => $timeout);
+        my $status = unpack('C', substr($clear_status, 0, 1));
+        #my $bmClear = unpack('C', substr($clear_status, 1, 1));
+        if ($status == STATUS_SUCCESS) {
+            last;
+        }
+        elsif ($status == STATUS_PENDING) {
+            warn "CHECK_CLEAR_STATUS: status pending";
+            next;
+        }
+        else {
+            croak "CHECK_CLEAR_STATUS failed with status $status";
+        }
+    }
+    $self->clear_feature_endpoint_out(timeout => $timeout);
+}
 
-    $timeout = $self->_get_timeout_arg($timeout);
+sub initiate_clear {
+    my $self = shift;
+    my ($timeout) = validated_list(\@_, _timeout_arg());
     
     my $bmRequestType = 0xa1;   # See USBTMC 4.2.1.6 INITIATE_CLEAR
-    my $bRequest = 5;
+    my $bRequest = INITIATE_CLEAR;
     my $wValue = 0;
     my $wIndex = $self->interface_number();
     my $wLength = 1;
-    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $timeout);
-    # FIXME: check clear status in loop.
-    
+    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $self->_get_timeout_arg($timeout));
 }
+
+sub check_clear_status {
+    my $self = shift;
+    my ($timeout) = validated_list(\@_, _timeout_arg());
+
+    my $bmRequestType = 0xa1;   # See USBTMC 4.2.1.6 INITIATE_CLEAR
+    my $bRequest = CHECK_CLEAR_STATUS;
+    my $wValue = 0;
+    my $wIndex = $self->interface_number();
+    my $wLength = 2;
+    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $self->_get_timeout_arg($timeout));
+}
+
 
 sub clear_feature_endpoint_out {
     my $self = shift;
     my ($timeout) = validated_list(
-        \@_, timeout => {isa => 'Maybe[Num]', optional => 1});
+        \@_, _timeout_arg());
 
-    $timeout = $self->_get_timeout_arg($timeout);
-    
     my $endpoint = $self->bulk_out_endpoint();
     my $bmRequestType = LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_STANDARD
         | LIBUSB_RECIPIENT_ENDPOINT;
@@ -540,16 +593,14 @@ sub clear_feature_endpoint_out {
     my $wValue = FEATURE_SELECTOR_ENDPOINT_HALT;
     my $wIndex = $endpoint;
     $self->handle()->control_transfer_write(
-        $bmRequestType, $bRequest, $wValue, $wIndex, "", $timeout);
+        $bmRequestType, $bRequest, $wValue, $wIndex, "", $self->_get_timeout_arg($timeout));
 }
 
 sub clear_feature_endpoint_in {
     my $self = shift;
     my ($timeout) = validated_list(
-        \@_, timeout => {isa => 'Maybe[Num]', optional => 1});
+        \@_, _timeout_arg());
 
-    $timeout = $self->_get_timeout_arg($timeout);
-    
     my $endpoint = $self->bulk_in_endpoint();
     my $bmRequestType = LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_STANDARD
         | LIBUSB_RECIPIENT_ENDPOINT;
@@ -557,7 +608,7 @@ sub clear_feature_endpoint_in {
     my $wValue = FEATURE_SELECTOR_ENDPOINT_HALT;
     my $wIndex = $endpoint;
     $self->handle()->control_transfer_write(
-        $bmRequestType, $bRequest, $wValue, $wIndex, "", $timeout);
+        $bmRequestType, $bRequest, $wValue, $wIndex, "", $self->_get_timeout_arg($timeout));
 }
 
 sub clear_halt_out {
@@ -600,10 +651,8 @@ The C<$capabilities> hash contains the following keys:
 sub get_capabilities {
     my $self = shift;
     my ($timeout) = validated_list(
-        \@_, timeout => {isa => 'Maybe[Num]', optional => 1});
+        \@_, _timeout_arg());
 
-    $timeout = $self->_get_timeout_arg($timeout);
-    
     my $bmRequestType = 0xa1;
     my $bRequest = 7;
     my $wValue = 0;
@@ -611,7 +660,7 @@ sub get_capabilities {
     my $wLength = 0x18;
 
     my $handle = $self->handle();
-    my $caps = $handle->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $timeout);
+    my $caps = $handle->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $self->_get_timeout_arg($timeout));
     if (length $caps != $wLength) {
         croak "Incomplete response in get_capabilities.";
     }

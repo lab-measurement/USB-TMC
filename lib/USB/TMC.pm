@@ -65,6 +65,10 @@ use constant {
     BULK_HEADER_LENGTH => 12,
 
     # bRequest values
+INITIATE_ABORT_BULK_OUT => 1,
+CHECK_ABORT_BULK_OUT_STATUS => 2,
+INITIATE_ABORT_BULK_IN => 3,
+CHECK_ABORT_BULK_IN_STATUS => 4,
     INITIATE_CLEAR => 5,
     CHECK_CLEAR_STATUS => 6,
     GET_CAPABILITIES => 7,
@@ -519,6 +523,133 @@ sub _btags {
     return (pack('C', $btag), pack('C', $btag_inverse));
 }
 
+
+
+
+#
+#
+# USBTMC requests
+#
+#
+
+sub abort_bulk_out {
+    my $self = shift;
+    my ($btag, $timeout) = validated_list(
+        \@_,
+        btag => {isa => 'Int'},
+        _timeout_arg());
+
+    my $initiate_status = $self->initiate_abort_bulk_out(
+        btag => $btag, timeout => $timeout);
+    $initiate_status = unpack('C', $initiate_status);
+    if ($initiate_status != STATUS_SUCCESS) {
+        carp "INITIATE_ABORT_BULK_OUT failed with status $initiate_status";
+        return;
+    }
+    
+    # Check status
+    while (1) {
+        my $clear_status = $self->check_abort_bulk_out_status(timeout => $timeout);
+        my $status = unpack('C', substr($clear_status, 0, 1));
+        if ($status == STATUS_PENDING) {
+            next;
+        }
+        else {
+            if ($status != STATUS_SUCCESS) {
+                carp("CHECK_ABORT_BULK_OUT_STATUS failed with status $status");
+            }
+            $self->clear_feature_endpoint_out(timeout => $timeout);
+            return;
+        }
+    }
+}
+
+sub abort_bulk_in {
+my $self = shift;    
+my ($btag, $timeout) = validated_list(
+        \@_,
+        btag => {isa => 'Int'},
+        _timeout_arg());
+
+    my $initiate_status = $self->initiate_abort_bulk_in(
+        btag => $btag, timeout => $timeout);
+    $initiate_status = unpack('C', $initiate_status);
+    if ($initiate_status != STATUS_SUCCESS) {
+        carp "INITIATE_ABORT_BULK_IN failed with status $initiate_status";
+        return;
+    }
+    
+    # Check status
+    while (1) {
+        my $clear_status = $self->check_abort_bulk_out_status(timeout => $timeout);
+        my $status = unpack('C', substr($clear_status, 0, 1));
+        if ($status == STATUS_PENDING) {
+            # FIXME: If bmAbortBulkIn.D0 = 1, the Host should read from the Bulk-IN endpoint until a short packet is received.
+            next;
+        }
+        else {
+            if ($status != STATUS_SUCCESS) {
+                carp("CHECK_ABORT_BULK_IN_STATUS failed with status $status");
+            }
+            return;
+        }
+    }
+}
+    
+sub initiate_abort_bulk_out {
+    my $self = shift;
+    my ($btag, $timeout) = validated_list(
+        \@_,
+        btag => {isa => 'Int'},
+        _timeout_arg());
+    
+    my $bmRequestType = 0xa2;
+    my $bRequest = INITIATE_ABORT_BULK_OUT;
+    my $wValue = $btag;
+    my $wIndex = $self->bulk_out_endpoint();
+    my $wLength = 2;
+    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $self->_get_timeout_arg($timeout));
+}
+
+sub initiate_abort_bulk_in {
+    my $self = shift;
+    my ($btag, $timeout) = validated_list(
+        \@_,
+        btag => {isa => 'Int'},
+        _timeout_arg());
+    
+    my $bmRequestType = 0xa2;
+    my $bRequest = INITIATE_ABORT_BULK_IN;
+    my $wValue = $btag;
+    my $wIndex = $self->bulk_in_endpoint();
+    my $wLength = 2;
+    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $self->_get_timeout_arg($timeout));
+}
+
+sub check_abort_bulk_out_status {
+    my $self = shift;
+    my ($timeout) = validated_list(\@_, _timeout_arg());
+
+    my $bmRequestType = 0xa2;  
+    my $bRequest = CHECK_ABORT_BULK_OUT_STATUS;
+    my $wValue = 0;
+    my $wIndex = $self->bulk_out_endpoint();
+    my $wLength = 8;
+    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $self->_get_timeout_arg($timeout));
+}
+
+sub check_abort_bulk_in_status {
+    my $self = shift;
+    my ($timeout) = validated_list(\@_, _timeout_arg());
+
+    my $bmRequestType = 0xa2;  
+    my $bRequest = CHECK_ABORT_BULK_IN_STATUS;
+    my $wValue = 0;
+    my $wIndex = $self->bulk_in_endpoint();
+    my $wLength = 8;
+    return $self->handle()->control_transfer_read($bmRequestType, $bRequest, $wValue, $wIndex, $wLength, $self->_get_timeout_arg($timeout));
+}
+
 =head2 clear
 
  $usbtmc->clear(timeout => $timeout);
@@ -534,19 +665,20 @@ sub clear {
     my $initiate_status = $self->initiate_clear(timeout => $timeout);
     $initiate_status = unpack('C', $initiate_status);
     if ($initiate_status != STATUS_SUCCESS) {
-        croak "INITIATE_CLEAR failed with status $initiate_status";
+        carp "INITIATE_CLEAR failed with status $initiate_status";
+        return;
     }
     
     # Check clear status
     while (1) {
         my $clear_status = $self->check_clear_status(timeout => $timeout);
         my $status = unpack('C', substr($clear_status, 0, 1));
-        #my $bmClear = unpack('C', substr($clear_status, 1, 1));
+        my $bmClear = unpack('C', substr($clear_status, 1, 1));
         if ($status == STATUS_SUCCESS) {
             last;
         }
         elsif ($status == STATUS_PENDING) {
-            warn "CHECK_CLEAR_STATUS: status pending";
+            carp "CHECK_CLEAR_STATUS: status pending, bmClear = $bmClear";
             next;
         }
         else {
@@ -560,7 +692,7 @@ sub initiate_clear {
     my $self = shift;
     my ($timeout) = validated_list(\@_, _timeout_arg());
     
-    my $bmRequestType = 0xa1;   # See USBTMC 4.2.1.6 INITIATE_CLEAR
+    my $bmRequestType = 0xa1;  
     my $bRequest = INITIATE_CLEAR;
     my $wValue = 0;
     my $wIndex = $self->interface_number();
@@ -572,7 +704,7 @@ sub check_clear_status {
     my $self = shift;
     my ($timeout) = validated_list(\@_, _timeout_arg());
 
-    my $bmRequestType = 0xa1;   # See USBTMC 4.2.1.6 INITIATE_CLEAR
+    my $bmRequestType = 0xa1;  
     my $bRequest = CHECK_CLEAR_STATUS;
     my $wValue = 0;
     my $wIndex = $self->interface_number();

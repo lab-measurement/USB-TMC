@@ -147,7 +147,7 @@ has 'btag' => (
 has 'reset_device' => (
     is      => 'ro',
     isa     => 'Bool',
-    default => 1,
+    default => 0,
 );
 
 has 'debug_mode' => (
@@ -200,7 +200,7 @@ sub _timeout_arg {
 sub _debug {
     my $self = shift;
     if ( $self->debug_mode() ) {
-        carp @_;
+        warn "USBTMC debug: ", @_, "\n";
     }
 }
 
@@ -210,7 +210,7 @@ sub _debug {
      vid => $vid,
      pid => $pid,
      serial => $serial, # optional
-     reset_device => 0, # default: do device reset
+     reset_device => 1, # default: do not reset device
      debug_mode => 1,   # print lots of debug messages
      libusb_log_level => LIBUSB_LOG_LEVEL_DEBUG, # Import LIBUSB_LOG_LEVEL_* constant from USB::LibUSB
      term_char => "\n", # Stop a read request if the term_char occurs in the
@@ -254,8 +254,6 @@ sub BUILD {
     }
 
     if ( $self->reset_device() ) {
-
-        # Clean up.
         $self->_debug("Doing device reset.");
         $handle->reset_device();
     }
@@ -280,14 +278,14 @@ sub BUILD {
 
     $self->_get_endpoint_addresses();
 
-    $self->_debug(
-        "Request clear_feature endpoint_halt for both bulk endpoints.");
+    # $self->_debug(
+    #     "Request clear_feature endpoint_halt for both bulk endpoints.");
 
-    $self->clear();
-    $self->clear_halt_out();
-    $self->clear_halt_in();
-    $self->clear_feature_endpoint_out();
-    $self->clear_feature_endpoint_in();
+    # $self->clear();
+    # $self->clear_halt_out();
+    # $self->clear_halt_in();
+    # $self->clear_feature_endpoint_out();
+    # $self->clear_feature_endpoint_in();
 }
 
 sub _find_usbtmc_interface {
@@ -404,7 +402,7 @@ sub dev_dep_msg_out {
         _timeout_arg(),
     );
 
-    $self->_debug("Doing dev_dep_msg_out with data $data");
+    $self->_debug("dev_dep_msg_out with data $data");
 
     my $header = $self->_dev_dep_msg_out_header( length => length $data );
     my $endpoint = $self->bulk_out_endpoint();
@@ -420,7 +418,9 @@ sub dev_dep_msg_out {
         );
     };
     if ($@) {
-        $self->abort_bulk_out( timeout => $timeout, btag => $self->btag() );
+        $self->_debug(
+            "dev_dep_msg_out: write failed. Aborting bulk transfer.");
+        $self->abort_bulk_out( timeout => $timeout );
         croak($@);
     }
 
@@ -449,7 +449,8 @@ sub dev_dep_msg_in {
         );
     };
     if ($@) {
-        $self->abort_bulk_in( btag => $self->btag(), timeout => $timeout );
+        $self->_debug("dev_dep_msg_in: read failed. Aborting bulk transfer.");
+        $self->abort_bulk_in( timeout => $timeout );
         croak($@);
     }
 
@@ -497,7 +498,9 @@ sub request_dev_dep_msg_in {
         );
     };
     if ($@) {
-        $self->abort_bulk_out( btag => $self->btag(), timeout => $timeout );
+        $self->_debug(
+            "request_dev_dep_msg_in: write failed. Aborting bulk transfer.");
+        $self->abort_bulk_out( timeout => $timeout );
         croak($@);
     }
 }
@@ -568,16 +571,12 @@ sub _btags {
 
 sub abort_bulk_out {
     my $self = shift;
-    my ( $btag, $timeout ) = validated_list(
+    my ($timeout) = validated_list(
         \@_,
-        btag => { isa => 'Int' },
         _timeout_arg()
     );
-
-    my $initiate_status = $self->initiate_abort_bulk_out(
-        btag    => $btag,
-        timeout => $timeout
-    );
+    my $initiate_status
+        = $self->initiate_abort_bulk_out( timeout => $timeout );
     $initiate_status = unpack( 'C', $initiate_status );
     if ( $initiate_status != STATUS_SUCCESS ) {
         carp "INITIATE_ABORT_BULK_OUT failed with status $initiate_status";
@@ -605,14 +604,13 @@ sub abort_bulk_out {
 
 sub abort_bulk_in {
     my $self = shift;
-    my ( $btag, $timeout ) = validated_list(
+    my ($timeout) = validated_list(
         \@_,
-        btag => { isa => 'Int' },
         _timeout_arg()
     );
 
     my $initiate_status
-        = $self->initiate_abort_bulk_in( btag => $btag, timeout => $timeout );
+        = $self->initiate_abort_bulk_in( timeout => $timeout );
     $initiate_status = unpack( 'C', $initiate_status );
     if ( $initiate_status != STATUS_SUCCESS ) {
         carp "INITIATE_ABORT_BULK_IN failed with status $initiate_status";
@@ -622,11 +620,27 @@ sub abort_bulk_in {
     # Check status
     while (1) {
         my $clear_status
-            = $self->check_abort_bulk_out_status( timeout => $timeout );
-        my $status = unpack( 'C', substr( $clear_status, 0, 1 ) );
+            = $self->check_abort_bulk_in_status( timeout => $timeout );
+        my $status        = unpack( 'C', substr( $clear_status, 0, 1 ) );
+        my $bmAbortBulkIn = unpack( 'C', substr( $clear_status, 1, 1 ) );
         if ( $status == STATUS_PENDING ) {
+            $self->_debug(
+                "check_abort_bulk_in_status bmAbortBulkIn = $bmAbortBulkIn\n"
+            );
 
-            # FIXME: If bmAbortBulkIn.D0 = 1, the Host should read from the Bulk-IN endpoint until a short packet is received.
+            # If bmAbortBulkIn.D0 = 1, the Host should read from the
+            # Bulk-IN endpoint until a short packet is received.
+            if ( $bmAbortBulkIn & 1 ) {
+                my $endpoint = $self->bulk_in_endpoint();
+                my $data     = $self->handle()->bulk_transfer_read(
+                    $endpoint, 1000,
+                    $self->_get_timeout_arg($timeout)
+                );
+                $self->_debug(
+                    "check_abort_bulk_in_status read bytes: ",
+                    length($data)
+                );
+            }
             next;
         }
         else {
@@ -640,15 +654,15 @@ sub abort_bulk_in {
 
 sub initiate_abort_bulk_out {
     my $self = shift;
-    my ( $btag, $timeout ) = validated_list(
+    my ($timeout) = validated_list(
         \@_,
-        btag => { isa => 'Int' },
         _timeout_arg()
     );
 
+    $self->_debug("initiate abort bulk out");
     my $bmRequestType = 0xa2;
     my $bRequest      = INITIATE_ABORT_BULK_OUT;
-    my $wValue        = $btag;
+    my $wValue        = $self->btag();
     my $wIndex        = $self->bulk_out_endpoint();
     my $wLength       = 2;
     return $self->handle()->control_transfer_read(
@@ -659,15 +673,15 @@ sub initiate_abort_bulk_out {
 
 sub initiate_abort_bulk_in {
     my $self = shift;
-    my ( $btag, $timeout ) = validated_list(
+    my ($timeout) = validated_list(
         \@_,
-        btag => { isa => 'Int' },
         _timeout_arg()
     );
 
+    $self->_debug("initiate abort bulk in");
     my $bmRequestType = 0xa2;
     my $bRequest      = INITIATE_ABORT_BULK_IN;
-    my $wValue        = $btag;
+    my $wValue        = $self->btag();
     my $wIndex        = $self->bulk_in_endpoint();
     my $wLength       = 2;
     return $self->handle()->control_transfer_read(
@@ -680,6 +694,7 @@ sub check_abort_bulk_out_status {
     my $self = shift;
     my ($timeout) = validated_list( \@_, _timeout_arg() );
 
+    $self->_debug("check abort bulk out status");
     my $bmRequestType = 0xa2;
     my $bRequest      = CHECK_ABORT_BULK_OUT_STATUS;
     my $wValue        = 0;
@@ -695,6 +710,7 @@ sub check_abort_bulk_in_status {
     my $self = shift;
     my ($timeout) = validated_list( \@_, _timeout_arg() );
 
+    $self->_debug("check abort bulk in status");
     my $bmRequestType = 0xa2;
     my $bRequest      = CHECK_ABORT_BULK_IN_STATUS;
     my $wValue        = 0;
@@ -734,7 +750,19 @@ sub clear {
             last;
         }
         elsif ( $status == STATUS_PENDING ) {
-            carp "CHECK_CLEAR_STATUS: status pending, bmClear = $bmClear";
+            $self->_debug(
+                "CHECK_CLEAR_STATUS: status pending, bmClear = $bmClear");
+
+            # If bmClear.D0 = 1, the Host should read from the
+            # Bulk-IN endpoint until a short packet is received.
+            if ( $bmClear & 1 ) {
+                my $endpoint = $self->bulk_in_endpoint();
+                my $data     = $self->handle()->bulk_transfer_read(
+                    $endpoint, 1000,
+                    $self->_get_timeout_arg($timeout)
+                );
+                $self->_debug( " read bytes: ", length($data) );
+            }
             next;
         }
         else {
@@ -748,6 +776,7 @@ sub initiate_clear {
     my $self = shift;
     my ($timeout) = validated_list( \@_, _timeout_arg() );
 
+    $self->_debug("initiate clear");
     my $bmRequestType = 0xa1;
     my $bRequest      = INITIATE_CLEAR;
     my $wValue        = 0;
@@ -763,6 +792,7 @@ sub check_clear_status {
     my $self = shift;
     my ($timeout) = validated_list( \@_, _timeout_arg() );
 
+    $self->_debug("check clear status");
     my $bmRequestType = 0xa1;
     my $bRequest      = CHECK_CLEAR_STATUS;
     my $wValue        = 0;
@@ -778,6 +808,7 @@ sub clear_feature_endpoint_out {
     my $self = shift;
     my ($timeout) = validated_list( \@_, _timeout_arg() );
 
+    $self->_debug("clear feature endpoint out");
     my $endpoint      = $self->bulk_out_endpoint();
     my $bmRequestType = LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_STANDARD
         | LIBUSB_RECIPIENT_ENDPOINT;
@@ -794,6 +825,7 @@ sub clear_feature_endpoint_in {
     my $self = shift;
     my ($timeout) = validated_list( \@_, _timeout_arg() );
 
+    $self->_debug("clear feature endpoint in");
     my $endpoint      = $self->bulk_in_endpoint();
     my $bmRequestType = LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_STANDARD
         | LIBUSB_RECIPIENT_ENDPOINT;

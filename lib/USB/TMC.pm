@@ -351,8 +351,8 @@ sub _get_endpoint_addresses {
 
  $usbtmc->write(data => $data, timeout => $timeout);
 
-Do DEV_DEP_MSG_OUT transfer.
-
+Do DEV_DEP_MSG_OUT transfer. So far this only supports USBTMC messages
+consisting of a single transfer.
 
 =cut
 
@@ -411,10 +411,18 @@ sub dev_dep_msg_out {
 
     # Ensure that total number of bytes is multiple of 4.
     $data .= $null_byte x ( ( 4 - ( length $data ) % 4 ) % 4 );
-    $self->handle()->bulk_transfer_write(
-        $endpoint, $header . $data,
+    $data = $header . $data;
+
+    my $transferred = $self->handle()->bulk_transfer_write(
+        $endpoint, $data,
         $self->_get_timeout_arg($timeout)
     );
+
+    my $data_length = length($data);
+    if ( $transferred != $data_length ) {
+        croak
+            "dev_dep_msg_out: data_length = $data_length, transferred = $transferred";
+    }
 }
 
 sub dev_dep_msg_in {

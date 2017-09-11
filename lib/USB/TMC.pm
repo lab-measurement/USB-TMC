@@ -413,10 +413,16 @@ sub dev_dep_msg_out {
     $data .= $null_byte x ( ( 4 - ( length $data ) % 4 ) % 4 );
     $data = $header . $data;
 
-    my $transferred = $self->handle()->bulk_transfer_write(
-        $endpoint, $data,
-        $self->_get_timeout_arg($timeout)
-    );
+    my $transferred = eval {
+        $self->handle()->bulk_transfer_write(
+            $endpoint, $data,
+            $self->_get_timeout_arg($timeout)
+        );
+    };
+    if ($@) {
+        $self->abort_bulk_out( timeout => $timeout, btag => $self->btag() );
+        croak($@);
+    }
 
     my $data_length = length($data);
     if ( $transferred != $data_length ) {
@@ -436,10 +442,16 @@ sub dev_dep_msg_in {
     $self->_debug("Doing dev_dep_msg_in with length $length");
 
     my $endpoint = $self->bulk_in_endpoint();
-    my $data     = $self->handle()->bulk_transfer_read(
-        $endpoint, $length + BULK_HEADER_LENGTH
-        ,          $self->_get_timeout_arg($timeout)
-    );
+    my $data     = eval {
+        $self->handle()->bulk_transfer_read(
+            $endpoint, $length + BULK_HEADER_LENGTH
+            ,          $self->_get_timeout_arg($timeout)
+        );
+    };
+    if ($@) {
+        $self->abort_bulk_in( btag => $self->btag(), timeout => $timeout );
+        croak($@);
+    }
 
     if ( length $data < BULK_HEADER_LENGTH ) {
         croak "dev_dep_msg_in does not contain header";
@@ -478,10 +490,16 @@ sub request_dev_dep_msg_in {
     my $endpoint = $self->bulk_out_endpoint();
 
     # Length of $header is already multiple of 4.
-    $self->handle()->bulk_transfer_write(
-        $endpoint, $header,
-        $self->_get_timeout_arg($timeout)
-    );
+    my $transferred = eval {
+        $self->handle()->bulk_transfer_write(
+            $endpoint, $header,
+            $self->_get_timeout_arg($timeout)
+        );
+    };
+    if ($@) {
+        $self->abort_bulk_out( btag => $self->btag(), timeout => $timeout );
+        croak($@);
+    }
 }
 
 sub _dev_dep_msg_out_header {

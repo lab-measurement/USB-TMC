@@ -17,6 +17,8 @@ USB::TMC - Perl interface to USB Test & Measurement (USBTMC) backend.
  $usbtmc->write(data => "*CLS\n");
  $usbtmc->write(data => "VOLT:NPLC 10\n");
 
+ $usbtmc->write(data => ":read?\n");
+ print $usbtmc->read(length => 100);
  print $usbtmc->query(data => ":read?\n", length => 100);
  
  my $capabilities = $usbtmc->get_capabilities();

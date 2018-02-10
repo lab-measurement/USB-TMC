@@ -33,6 +33,21 @@ Internally this module is based on L<USB::LibUSB>.
 Does not yet support the additional features of USBTMC-USB488. But those could
 easily be added if needed.
 
+=head1 INSTALLATION
+
+The documentation of L<USB::LibUSB> contains detailed installation
+instructions.
+
+To access USB devices as a non-root user we need udev rules. E.g. on
+Debian we add a file F</etc/udev/rules.d/97-usbtmc.rules> with contents:
+
+ ATTR{idVendor}=="0957", GROUP="usbtmc"
+
+where "0957" (actually 0x0957) is the USB vendor ID of Agilent Technologies.
+
+With this udev rule, all users in the "usbtmc" group can access the device.
+
+
 =head1 METHODS
 
 Errors with USB transfers will result in a croak.

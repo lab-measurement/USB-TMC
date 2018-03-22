@@ -735,6 +735,15 @@ CLEAR_FEATURE request to clear the Bulk-OUT Halt.
 
 sub clear {
     my $self = shift;
+    $self->clear_without_output_clear(@_);
+    my ($timeout) = validated_list( \@_, _timeout_arg() );
+
+    # Required by USB-TMC standard?
+    $self->clear_feature_endpoint_out( timeout => $timeout );
+}
+
+sub clear_without_output_clear {
+    my $self = shift;
     my ($timeout) = validated_list( \@_, _timeout_arg() );
     my $initiate_status = $self->initiate_clear( timeout => $timeout );
     $initiate_status = unpack( 'C', $initiate_status );
@@ -771,8 +780,8 @@ sub clear {
             croak "CHECK_CLEAR_STATUS failed with status $status";
         }
     }
-    $self->clear_feature_endpoint_out( timeout => $timeout );
 }
+
 
 sub initiate_clear {
     my $self = shift;

@@ -312,6 +312,11 @@ sub _find_usbtmc_interface {
     my $config     = $self->device()->get_active_config_descriptor();
     my @interfaces = @{ $config->{interface} };
     for my $interface (@interfaces) {
+        if (@{$interface} > 1) {
+            $self->_debug("Interface with multiple alternates?!");
+        }
+        # Assume that we have only one alternate setting
+        $interface = $interface->[0];
         if (   $interface->{bInterfaceClass} == 0xFE
             && $interface->{bInterfaceSubClass} == 3 ) {
             my $number = $interface->{bInterfaceNumber};

@@ -334,6 +334,7 @@ sub _get_endpoint_addresses {
 
     my $config    = $self->device()->get_active_config_descriptor();
     my $interface = $config->{interface}[$interface_number];
+    $interface = $interface->[0]; # Assume one altenate setting
     my @endpoints = @{ $interface->{endpoint} };
 
     if ( @endpoints != 2 && @endpoints != 3 ) {

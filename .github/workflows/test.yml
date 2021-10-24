@@ -15,10 +15,8 @@ jobs:
       - run: lsb_release -a
       - run: sudo apt-get install libusb-1.0-0-dev pkg-config
       - run: cpanm --quiet --notest --skip-satisfied Dist::Zilla
-      - run:  dzil authordeps --missing | grep -vP '[^\w:]' | xargs cpanm
-        --quiet --notest
-      - run: dzil listdeps --missing --cpanm | grep -vP '[^\w:~"\.]' | xargs
-        cpanm --quiet --notest
+      - run:  dzil authordeps --missing | grep -vP '[^\w:]' | xargs cpanm --quiet --notest
+      - run: dzil listdeps --missing --cpanm | grep -vP '[^\w:~"\.]' | xargs cpanm --quiet --notest
       - run: cpanm Test::Pod
       - run: prove --verbose --lib --recurse t/
       

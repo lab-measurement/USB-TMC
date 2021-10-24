@@ -1,0 +1,25 @@
+name: test
+on: [push]
+jobs:
+  'prove-lrt':
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        perl: ['5.24', '5.26', '5.28', '5.30', '5.32', '5.34']
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{matrix.perl}}
+      - run: lsb_release -a
+      - run: sudo apt-get install libusb-1.0-0-dev pkg-config
+      - run: cpanm --quiet --notest --skip-satisfied Dist::Zilla
+      - run:  dzil authordeps --missing | grep -vP '[^\w:]' | xargs cpanm
+        --quiet --notest
+      - run: dzil listdeps --missing --cpanm | grep -vP '[^\w:~"\.]' | xargs
+        cpanm --quiet --notest
+      - run: cpanm Test::Pod
+      - run: prove --verbose --lib --recurse t/
+      
+      
